@@ -6,10 +6,10 @@ const {
     getTelemetry
 } = require("../controllers/telemetryController");
 
-// Add telemetry
+// POST /api/telemetry
 router.post("/", addTelemetry);
 
-// Get telemetry by vehicle ID
+// GET /api/telemetry/:vehicleId
 router.get("/:vehicleId", getTelemetry);
 
 module.exports = router;

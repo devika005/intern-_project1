@@ -1,42 +1,75 @@
 const TelemetryBucket = require("../models/TelemetryBucket");
+const { Worker } = require("worker_threads");
+const path = require("path");
 
-// Add telemetry data
+// Add telemetry using Worker Thread
 const addTelemetry = async (req, res) => {
     try {
-        const { vehicleId, latitude, longitude, speed } = req.body;
+        const worker = new Worker(
+            path.join(__dirname, "../workers/telemetryWorker.js")
+        );
 
-        let bucket = await TelemetryBucket.findOne({ vehicleId });
+        // Send request data to worker
+        worker.postMessage(req.body);
 
-        if (!bucket) {
-            bucket = new TelemetryBucket({
-                vehicleId,
-                records: []
-            });
-        }
+        // Receive processed data from worker
+        worker.on("message", async (processedData) => {
+            try {
+                const { vehicleId, latitude, longitude, speed } = processedData;
 
-        bucket.records.push({
-            latitude,
-            longitude,
-            speed,
-            timestamp: new Date()
+                let bucket = await TelemetryBucket.findOne({ vehicleId });
+
+                if (!bucket) {
+                    bucket = new TelemetryBucket({
+                        vehicleId,
+                        records: []
+                    });
+                }
+
+                bucket.records.push({
+                    latitude,
+                    longitude,
+                    speed,
+                    timestamp: new Date()
+                });
+
+                await bucket.save();
+
+                res.status(201).json({
+                    message: "Telemetry processed and stored successfully",
+                    processedData,
+                    bucket
+                });
+            } catch (error) {
+                res.status(500).json({
+                    message: "Database error",
+                    error: error.message
+                });
+            }
         });
 
-        await bucket.save();
+        worker.on("error", (error) => {
+            res.status(500).json({
+                message: "Worker thread failed",
+                error: error.message
+            });
+        });
 
-        res.status(201).json({
-            message: "Telemetry added successfully",
-            bucket
+        worker.on("exit", (code) => {
+            if (code !== 0) {
+                console.error(`Worker stopped with exit code ${code}`);
+            }
         });
 
     } catch (error) {
         res.status(500).json({
-            message: "Error adding telemetry",
+            message: "Error processing telemetry",
             error: error.message
         });
     }
 };
 
-// Get telemetry for a vehicle
+// Get telemetry by vehicle ID
 const getTelemetry = async (req, res) => {
     try {
         const bucket = await TelemetryBucket.findOne({
