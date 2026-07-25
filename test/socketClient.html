@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FleetDash Socket Test</title>
+
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+</head>
+<body>
+
+    <h1>FleetDash Live Telemetry</h1>
+
+    <div id="output">
+        Waiting for telemetry...
+    </div>
+
+    <script>
+        const socket = io("http://localhost:5000");
+
+        socket.on("connect", () => {
+            console.log("Connected:", socket.id);
+
+            document.getElementById("output").innerHTML =
+                "<h3>Connected to Socket.io Server</h3>";
+        });
+
+        socket.on("telemetryUpdate", (data) => {
+
+            console.log(data);
+
+            document.getElementById("output").innerHTML += `
+                <hr>
+                <p><strong>Vehicle:</strong> ${data.vehicleId}</p>
+                <p><strong>Latitude:</strong> ${data.latitude}</p>
+                <p><strong>Longitude:</strong> ${data.longitude}</p>
+                <p><strong>Speed:</strong> ${data.speed}</p>
+                <p><strong>Processed:</strong> ${data.processed}</p>
+            `;
+        });
+
+        socket.on("disconnect", () => {
+            console.log("Disconnected");
+        });
+    </script>
+
+</body>
+</html>

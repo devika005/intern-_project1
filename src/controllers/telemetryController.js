@@ -33,13 +33,17 @@ const addTelemetry = async (req, res) => {
                     timestamp: new Date()
                 });
 
-                await bucket.save();
+               await bucket.save();
 
-                res.status(201).json({
-                    message: "Telemetry processed and stored successfully",
-                    processedData,
-                    bucket
-                });
+// Send telemetry to all connected clients
+const io = req.app.get("io");
+io.emit("telemetryUpdate", processedData);
+
+res.status(201).json({
+    message: "Telemetry processed and stored successfully",
+    processedData,
+    bucket
+});
             } catch (error) {
                 res.status(500).json({
                     message: "Database error",
