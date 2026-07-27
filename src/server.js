@@ -1,5 +1,5 @@
 require("dotenv").config();
-
+const redisClient = require("./config/redis");
 const http = require("http");
 const app = require("./app");
 const connectDB = require("./config/db");
@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 5000;
 
 // Connect to MongoDB
 connectDB();
+redisClient.connect();
 
 // Create HTTP server
 const server = http.createServer(app);

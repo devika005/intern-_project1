@@ -1,6 +1,7 @@
 const TelemetryBucket = require("../models/TelemetryBucket");
 const { Worker } = require("worker_threads");
 const path = require("path");
+const redisClient = require("../config/redis");
 
 // Add telemetry using Worker Thread
 const addTelemetry = async (req, res) => {
@@ -33,9 +34,13 @@ const addTelemetry = async (req, res) => {
                     timestamp: new Date()
                 });
 
-               await bucket.save();
+await bucket.save();
 
-// Send telemetry to all connected clients
+await redisClient.set(
+    `telemetry:${vehicleId}`,
+    JSON.stringify(processedData)
+);
+
 const io = req.app.get("io");
 io.emit("telemetryUpdate", processedData);
 
@@ -95,8 +100,30 @@ const getTelemetry = async (req, res) => {
         });
     }
 };
+// Get latest telemetry from Redis cache
+const getCachedTelemetry = async (req, res) => {
+    try {
+        const vehicleId = req.params.vehicleId;
 
+        const cachedData = await redisClient.get(`telemetry:${vehicleId}`);
+
+        if (!cachedData) {
+            return res.status(404).json({
+                message: "No cached telemetry found"
+            });
+        }
+
+        res.status(200).json(JSON.parse(cachedData));
+
+    } catch (error) {
+        res.status(500).json({
+            message: "Error fetching cached telemetry",
+            error: error.message
+        });
+    }
+};
 module.exports = {
     addTelemetry,
-    getTelemetry
+    getTelemetry,
+    getCachedTelemetry
 };
