@@ -8,20 +8,41 @@ const path = require("path");
 const redisClient = require("../config/redis");
 const { checkGeofence } = require("../services/geofenceService");
 
+
 // ======================================
 // ADD TELEMETRY
 // ======================================
 
 const addTelemetry = async (req, res) => {
     try {
+
         const worker = new Worker(
             path.join(__dirname, "../workers/telemetryWorker.js")
         );
 
+        // Send telemetry data to worker
         worker.postMessage(req.body);
 
-        worker.on("message", async (processedData) => {
+        // Receive result from worker
+        worker.on("message", async (workerResult) => {
+
+            // ======================================
+            // HANDLE VALIDATION ERROR
+            // ======================================
+
+            if (!workerResult.success) {
+
+                return res.status(400).json({
+                    message: "Invalid telemetry data",
+                    error: workerResult.error
+                });
+            }
+
+            // Get processed telemetry
+            const processedData = workerResult.data;
+
             try {
+
                 const {
                     vehicleId,
                     latitude,
@@ -29,20 +50,23 @@ const addTelemetry = async (req, res) => {
                     speed
                 } = processedData;
 
-                // Find existing telemetry bucket
+
+                // ======================================
+                // MONGODB TELEMETRY BUCKET
+                // ======================================
+
                 let bucket = await TelemetryBucket.findOne({
                     vehicleId
                 });
 
-                // Create bucket if it doesn't exist
                 if (!bucket) {
+
                     bucket = new TelemetryBucket({
                         vehicleId,
                         records: []
                     });
                 }
 
-                // Add telemetry record
                 bucket.records.push({
                     latitude,
                     longitude,
@@ -50,8 +74,8 @@ const addTelemetry = async (req, res) => {
                     timestamp: new Date()
                 });
 
-                // Save telemetry
                 await bucket.save();
+
 
                 // ======================================
                 // GEOFENCE CHECK
@@ -59,28 +83,34 @@ const addTelemetry = async (req, res) => {
 
                 const geofences = await Geofence.find();
 
-                const geofenceResults = geofences.map((geofence) => {
-                    const result = checkGeofence(
-                        latitude,
-                        longitude,
-                        geofence
-                    );
+                const geofenceResults = geofences.map(
+                    (geofence) => {
 
-                    return {
-                        geofenceId: geofence._id,
-                        geofenceName: geofence.name,
-                        ...result
-                    };
-                });
+                        const result = checkGeofence(
+                            latitude,
+                            longitude,
+                            geofence
+                        );
+
+                        return {
+                            geofenceId: geofence._id,
+                            geofenceName: geofence.name,
+                            ...result
+                        };
+                    }
+                );
+
 
                 // ======================================
                 // GEOFENCE BREACH ALERT
                 // ======================================
 
                 for (const result of geofenceResults) {
+
                     if (!result.inside) {
+
                         const alert = {
-                            vehicleId: vehicleId,
+                            vehicleId,
                             geofenceId: result.geofenceId,
                             geofenceName: result.geofenceName,
                             alertType: "GEOFENCE_BREACH",
@@ -90,8 +120,9 @@ const addTelemetry = async (req, res) => {
                                 `Vehicle ${vehicleId} has left ${result.geofenceName}`
                         };
 
-                        // Save alert to MongoDB
-                        const savedAlert = await Alert.create(alert);
+                        // Save alert
+                        const savedAlert =
+                            await Alert.create(alert);
 
                         console.log(
                             "🚨 GEOFENCE BREACH:",
@@ -102,6 +133,7 @@ const addTelemetry = async (req, res) => {
                         const io = req.app.get("io");
 
                         if (io) {
+
                             io.emit(
                                 "geofenceBreach",
                                 savedAlert
@@ -109,6 +141,7 @@ const addTelemetry = async (req, res) => {
                         }
                     }
                 }
+
 
                 // ======================================
                 // REDIS CACHE
@@ -119,60 +152,88 @@ const addTelemetry = async (req, res) => {
                     JSON.stringify(processedData)
                 );
 
+
                 // ======================================
-                // REAL-TIME TELEMETRY UPDATE
+                // SOCKET.IO TELEMETRY UPDATE
                 // ======================================
 
                 const io = req.app.get("io");
 
                 if (io) {
+
                     io.emit(
                         "telemetryUpdate",
                         processedData
                     );
                 }
 
+
                 // ======================================
                 // RESPONSE
                 // ======================================
 
                 res.status(201).json({
+
                     message:
                         "Telemetry processed and stored successfully",
+
                     processedData,
+
                     bucket,
+
                     geofenceResults
+
                 });
 
             } catch (error) {
+
                 console.error(
                     "Telemetry processing error:",
                     error
                 );
 
                 res.status(500).json({
-                    message: "Error processing telemetry",
-                    error: error.message
+
+                    message:
+                        "Error processing telemetry",
+
+                    error:
+                        error.message
                 });
             }
         });
 
-        // Worker error
+
+        // ======================================
+        // WORKER ERROR
+        // ======================================
+
         worker.on("error", (error) => {
+
             console.error(
                 "Worker thread error:",
                 error
             );
 
             res.status(500).json({
-                message: "Worker thread failed",
-                error: error.message
+
+                message:
+                    "Worker thread failed",
+
+                error:
+                    error.message
             });
         });
 
-        // Worker exit
+
+        // ======================================
+        // WORKER EXIT
+        // ======================================
+
         worker.on("exit", (code) => {
+
             if (code !== 0) {
+
                 console.error(
                     `Worker stopped with exit code ${code}`
                 );
@@ -180,36 +241,53 @@ const addTelemetry = async (req, res) => {
         });
 
     } catch (error) {
+
         res.status(500).json({
-            message: "Error processing telemetry",
-            error: error.message
+
+            message:
+                "Error processing telemetry",
+
+            error:
+                error.message
         });
     }
 };
 
 
 // ======================================
-// GET TELEMETRY BY VEHICLE ID
+// GET TELEMETRY FROM MONGODB
 // ======================================
 
 const getTelemetry = async (req, res) => {
+
     try {
-        const bucket = await TelemetryBucket.findOne({
-            vehicleId: req.params.vehicleId
-        });
+
+        const bucket =
+            await TelemetryBucket.findOne({
+                vehicleId:
+                    req.params.vehicleId
+            });
 
         if (!bucket) {
+
             return res.status(404).json({
-                message: "Telemetry not found"
+
+                message:
+                    "Telemetry not found"
             });
         }
 
         res.status(200).json(bucket);
 
     } catch (error) {
+
         res.status(500).json({
-            message: "Error fetching telemetry",
-            error: error.message
+
+            message:
+                "Error fetching telemetry",
+
+            error:
+                error.message
         });
     }
 };
@@ -220,16 +298,23 @@ const getTelemetry = async (req, res) => {
 // ======================================
 
 const getCachedTelemetry = async (req, res) => {
-    try {
-        const vehicleId = req.params.vehicleId;
 
-        const cachedData = await redisClient.get(
-            `telemetry:${vehicleId}`
-        );
+    try {
+
+        const vehicleId =
+            req.params.vehicleId;
+
+        const cachedData =
+            await redisClient.get(
+                `telemetry:${vehicleId}`
+            );
 
         if (!cachedData) {
+
             return res.status(404).json({
-                message: "No cached telemetry found"
+
+                message:
+                    "No cached telemetry found"
             });
         }
 
@@ -238,9 +323,14 @@ const getCachedTelemetry = async (req, res) => {
         );
 
     } catch (error) {
+
         res.status(500).json({
-            message: "Error fetching cached telemetry",
-            error: error.message
+
+            message:
+                "Error fetching cached telemetry",
+
+            error:
+                error.message
         });
     }
 };
