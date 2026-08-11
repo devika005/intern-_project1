@@ -1,48 +1,177 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>FleetDash Socket Test</title>
 
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
+
 <body>
 
     <h1>FleetDash Live Telemetry</h1>
+
+    <div id="connection">
+        Connecting...
+    </div>
 
     <div id="output">
         Waiting for telemetry...
     </div>
 
+    <div id="alerts">
+        <h2>Geofence Alerts</h2>
+        <p>No alerts yet.</p>
+    </div>
+
+
     <script>
+
+        // Connect to FleetDash backend
         const socket = io("http://localhost:5000");
 
-        socket.on("connect", () => {
-            console.log("Connected:", socket.id);
 
-            document.getElementById("output").innerHTML =
-                "<h3>Connected to Socket.io Server</h3>";
+        // ======================================
+        // SOCKET CONNECTION
+        // ======================================
+
+        socket.on("connect", () => {
+
+            console.log(
+                "✅ Connected:",
+                socket.id
+            );
+
+            document.getElementById(
+                "connection"
+            ).innerHTML =
+                "<h3>✅ Connected to Socket.io Server</h3>";
         });
+
+
+        // ======================================
+        // TELEMETRY UPDATE
+        // ======================================
 
         socket.on("telemetryUpdate", (data) => {
 
-            console.log(data);
+            console.log(
+                "📍 Telemetry Update:",
+                data
+            );
 
-            document.getElementById("output").innerHTML += `
+            document.getElementById(
+                "output"
+            ).innerHTML += `
+
                 <hr>
-                <p><strong>Vehicle:</strong> ${data.vehicleId}</p>
-                <p><strong>Latitude:</strong> ${data.latitude}</p>
-                <p><strong>Longitude:</strong> ${data.longitude}</p>
-                <p><strong>Speed:</strong> ${data.speed}</p>
-                <p><strong>Processed:</strong> ${data.processed}</p>
+
+                <p>
+                    <strong>Vehicle:</strong>
+                    ${data.vehicleId}
+                </p>
+
+                <p>
+                    <strong>Latitude:</strong>
+                    ${data.latitude}
+                </p>
+
+                <p>
+                    <strong>Longitude:</strong>
+                    ${data.longitude}
+                </p>
+
+                <p>
+                    <strong>Speed:</strong>
+                    ${data.speed}
+                </p>
+
+                <p>
+                    <strong>Processed:</strong>
+                    ${data.processed}
+                </p>
+
+                <p>
+                    <strong>Processed At:</strong>
+                    ${data.processedAt}
+                </p>
             `;
         });
 
-        socket.on("disconnect", () => {
-            console.log("Disconnected");
+
+        // ======================================
+        // GEOFENCE BREACH
+        // ======================================
+
+        socket.on("geofenceBreach", (alert) => {
+
+            console.log(
+                "🚨 Geofence Breach:",
+                alert
+            );
+
+            document.getElementById(
+                "alerts"
+            ).innerHTML += `
+
+                <hr>
+
+                <h3>🚨 GEOFENCE BREACH</h3>
+
+                <p>
+                    <strong>Vehicle:</strong>
+                    ${alert.vehicleId}
+                </p>
+
+                <p>
+                    <strong>Geofence:</strong>
+                    ${alert.geofenceName}
+                </p>
+
+                <p>
+                    <strong>Alert Type:</strong>
+                    ${alert.alertType}
+                </p>
+
+                <p>
+                    <strong>Distance:</strong>
+                    ${alert.distance} km
+                </p>
+
+                <p>
+                    <strong>Radius:</strong>
+                    ${alert.radius} km
+                </p>
+
+                <p>
+                    <strong>Message:</strong>
+                    ${alert.message}
+                </p>
+            `;
         });
+
+
+        // ======================================
+        // DISCONNECT
+        // ======================================
+
+        socket.on("disconnect", () => {
+
+            console.log(
+                "❌ Disconnected from server"
+            );
+
+            document.getElementById(
+                "connection"
+            ).innerHTML =
+                "<h3>❌ Disconnected from Socket.io Server</h3>";
+        });
+
     </script>
 
 </body>
+
 </html>
